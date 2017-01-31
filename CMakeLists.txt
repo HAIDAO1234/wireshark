@@ -1112,6 +1112,7 @@ if(ENABLE_PLUGINS)
 	endif()
 	set(PLUGIN_SRC_DIRS
 		plugins/docsis
+		plugins/epl+xdd
 		plugins/ethercat
 		plugins/gryphon
 		plugins/irda
