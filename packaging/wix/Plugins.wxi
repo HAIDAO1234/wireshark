@@ -8,7 +8,7 @@
                 <File Id="filDocsis_dll" KeyPath="yes" Source="$(var.Plugins.Dir)\docsis.dll" />
             </Component>
             <Component Id="cmpEpl_xdd_dll" Guid="*">
-                <File Id="filEpl_xdd_dll" KeyPath="yes" Source="$(var.Plugins.Dir)\epl+xdd.dll" />
+                <File Id="filEpl_xdd_dll" KeyPath="yes" Source="$(var.Plugins.Dir)\epl_plus_xdd.dll" />
             </Component>
             <Component Id="cmpEthercat_dll" Guid="*">
                 <File Id="filEthercat_dll" KeyPath="yes" Source="$(var.Plugins.Dir)\ethercat.dll" />

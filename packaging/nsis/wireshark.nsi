@@ -955,7 +955,7 @@ Section "Dissector Plugins" SecPlugins
 ;-------------------------------------------
 SetOutPath '$INSTDIR\plugins\${VERSION}'
 File "${STAGING_DIR}\plugins\docsis.dll"
-File "${STAGING_DIR}\plugins\epl+xdd.dll"
+File "${STAGING_DIR}\plugins\epl_plus_xdd.dll"
 File "${STAGING_DIR}\plugins\ethercat.dll"
 File "${STAGING_DIR}\plugins\gryphon.dll"
 File "${STAGING_DIR}\plugins\irda.dll"
