@@ -20,6 +20,7 @@
 *.so*
 *.[oa]
 *.dylib
+*.dSYM/
 *grammar.out
 *grammar.[ch]
 *scanner.c

@@ -347,7 +347,7 @@ if HAVE_PLUGINS
 -include plugins/Custom.make
 plugin_ldadd = $(_CUSTOM_plugin_ldadd_) \
 	-dlopen plugins/docsis/docsis.la \
-	-dlopen plugins/epl+xdd/epl+xdd.la \
+	-dlopen plugins/epl_plus_xdd/epl_plus_xdd.la \
 	-dlopen plugins/ethercat/ethercat.la \
 	-dlopen plugins/gryphon/gryphon.la \
 	-dlopen plugins/irda/irda.la \

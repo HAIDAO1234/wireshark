@@ -24,7 +24,7 @@
 SUBDIRS = $(_CUSTOM_SUBDIRS_) \
 	docsis \
 	easy_codec \
-	epl+xdd \
+	epl_plus_xdd \
 	ethercat \
 	gryphon \
 	irda \
