@@ -2311,6 +2311,12 @@ if(BUILD_dumpcap AND PCAP_FOUND)
 	)
 	add_executable(dumpcap ${dumpcap_FILES})
 	add_dependencies(dumpcap version)
+
+	set_target_properties( dumpcap PROPERTIES
+		INSTALL_RPATH ${CMAKE_INSTALL_PREFIX}/lib
+		INSTALL_RPATH_USE_LINK_PATH TRUE
+	)
+
 	set_extra_executable_properties(dumpcap "Executables")
 	target_link_libraries(dumpcap ${dumpcap_LIBS})
 	install(TARGETS dumpcap
