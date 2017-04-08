@@ -1473,7 +1473,7 @@ set(INSTALL_FILES
 	${CMAKE_BINARY_DIR}/doc/AUTHORS-SHORT
 	${CMAKE_BINARY_DIR}/doc/asn2deb.html
 	${CMAKE_BINARY_DIR}/doc/androiddump.html
-	${CMAKE_BINARY_DIR}/doc/udpdump.html
+	#${CMAKE_BINARY_DIR}/doc/udpdump.html
 	${CMAKE_BINARY_DIR}/doc/capinfos.html
 	${CMAKE_BINARY_DIR}/doc/captype.html
 	${CMAKE_BINARY_DIR}/doc/ciscodump.html
