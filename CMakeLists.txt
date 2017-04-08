@@ -115,7 +115,7 @@ if(WIN32)
 		file( TO_CMAKE_PATH "$ENV{WIRESHARK_LIB_DIR}" _PROJECT_LIB_DIR )
 	elseif( DEFINED ENV{WIRESHARK_BASE_DIR} )
 		file( TO_CMAKE_PATH "$ENV{WIRESHARK_BASE_DIR}" _WS_BASE_DIR )
-		set( _PROJECT_LIB_DIR "${_WS_BASE_DIR}/Wireshark-${WIRESHARK_TARGET_PLATFORM}-libs-2.2" )
+		set( _PROJECT_LIB_DIR "${_WS_BASE_DIR}/wireshark-${WIRESHARK_TARGET_PLATFORM}-libs" )
 	else()
 		# Don't know what to do
 		message(FATAL_ERROR "Neither WIRESHARK_BASE_DIR or WIRESHARK_LIB_DIR are defined")
@@ -191,8 +191,8 @@ include(CMakeInstallDirs)
 # Banner shown at top right of Qt welcome screen.
 if(DEFINED ENV{WIRESHARK_VERSION_FLAVOR})
 	set(VERSION_FLAVOR "$ENV{WIRESHARK_VERSION_FLAVOR}")
-#else()
-#	set(VERSION_FLAVOR "Development Build")
+else()
+	set(VERSION_FLAVOR "Development Build")
 endif()
 
 # These are required in .rc files and manifests
@@ -308,7 +308,9 @@ if( CMAKE_C_COMPILER_ID MATCHES "MSVC")
 	#  when compiling Wireshark sources. (Selected from "level 4" warnings).
 	## 4295: array is too small to include a terminating null character
 	## 4189: local variable is initialized but not referenced
-	set(WARNINGS_CFLAGS "/w34295 /w34189")
+	# Disable warnings about about use of flexible array members:
+	## 4200: nonstandard extension used : zero-sized array in struct/union
+	set(WARNINGS_CFLAGS "/w34295 /w34189 /wd4200")
 
 	set(WIRESHARK_COMMON_FLAGS
 		${LOCAL_CFLAGS}
@@ -343,7 +345,57 @@ else()
 		endif()
 	endif()
 
-	set(WIRESHARK_COMMON_FLAGS
+	if(CMAKE_VERSION VERSION_LESS "3.1")
+		# Many modern compilers use c99 by default, but for older ones
+		# (like GCC 4.4.7), -std=gnu99 is required to avoid errors about
+		# use constructs like "for (int i = 0; i < n; i++) ;"
+		#
+		# Older versions of IBM XL C may require -qlanglvl=extc99.
+		# With V7.0, the "xlc" command defaults to C89; with 10.1,
+		# it defaults to C99 (both with IBM syntax extensions).
+		#
+		# HP's manual for HP C/HP-UX B.11.11.04 (the tenth
+		# edition of the manual), for PA-RISC, "documents
+		# new HP C features that support C99 industry standards".
+		# The manual for Version A.06.25 for Itanium mentions an
+		# -AC99 flag to support C99, but says it's the default;
+		# some older versions might require -AC99.
+		#
+		# As of Sun Studio 8, the compiler appears to default
+		# to supporting some C99 language features, but not
+		# C99 library differences from C89; -xc99 will give
+		# you both.  The earlier Sun Forte Developer 6 update 2
+		# might or might not support thosee C99 language features
+		# by default, and doesn't speak of library differences;
+		# if it doesn't support the language features by default,
+		# -xc99 will support them.
+		#
+		if(CMAKE_C_COMPILER_ID MATCHES "GNU")
+			set(CMAKE_C_FLAGS "-std=gnu99 ${CMAKE_C_FLAGS}")
+		endif()
+	else()
+		#
+		# Current versions of CMake do not support options to
+		# request C99 for XL C, HP C, or Oracle C.  (They may
+		# not be necessary for current versions.)
+		#
+		set(CMAKE_C_STANDARD 99)
+	endif()
+
+	if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+		set(WIRESHARK_COMMON_FLAGS ${WIRESHARK_COMMON_FLAGS}
+			# avoid "argument unused during compilation" warnings
+			# (for example, when getting the -gsplit-dwarf option or
+			# when combining -fwrapv with -fno-strict-overflow)
+			-Qunused-arguments
+		)
+	else()
+		set(WIRESHARK_COMMON_FLAGS ${WIRESHARK_COMMON_FLAGS}
+			-fexcess-precision=fast
+		)
+	endif()
+
+	set(COMMON_WARN_FLAGS
 		# The following are for C and C++
 		# -O<X> and -g get set by the CMAKE_BUILD_TYPE
 		-Wall
@@ -364,10 +416,9 @@ else()
 		-Wheader-guard
 	)
 
-	set(WIRESHARK_C_ONLY_FLAGS
+	set(C_WARN_FLAGS
 		# The following are C only, not C++
 		-Wc++-compat
-		-Wdeclaration-after-statement
 		-Wshadow
 		-Wno-pointer-sign
 		-Wold-style-definition
@@ -378,14 +429,19 @@ else()
 		# The Qt headers generate a ton of shortening errors on 64-bit systems
 		# so only enable this for C for now.
 		-Wshorten-64-to-32
-		# Clang only
-		-Wc99-extensions
+
+		#
+		# Implicit function declarations are an error in C++ and most
+		# likely a programming error in C. Turn -Wimplicit-int and
+		# -Wimplicit-function-declaration into an error by default.
+		#
+		-Werror=implicit
 	)
 
-	set(WIRESHARK_CXX_ONLY_FLAGS
+	set(CXX_WARN_FLAGS
 	)
 
-	set(WIRESHARK_EXTRA_COMPILER_COMMON_FLAGS
+	set(COMMON_EXTRA_WARN_FLAGS
 		# The following are for C and C++
 		-Wpedantic
 		#
@@ -440,7 +496,7 @@ else()
 		-fno-delete-null-pointer-checks
 	)
 
-	set(WIRESHARK_EXTRA_COMPILER_C_ONLY_FLAGS
+	set(C_EXTRA_WARN_FLAGS
 		# The following are C only, not C++
 		#
 		# Due to various places where APIs we don't control
@@ -450,32 +506,13 @@ else()
 		-Wbad-function-cast
 	)
 
-	set(WIRESHARK_EXTRA_COMPILER_CXX_ONLY_FLAGS
+	set(CXX_EXTRA_WARN_FLAGS
 	)
 
-	if(CMAKE_C_COMPILER_ID MATCHES "Clang")
-		set(WIRESHARK_COMMON_FLAGS ${WIRESHARK_COMMON_FLAGS}
-			# avoid "argument unused during compilation" warnings
-			# (for example, when getting the -gsplit-dwarf option or
-			# when combining -fwrapv with -fno-strict-overflow)
-			-Qunused-arguments
-		)
-
-		set(WIRESHARK_CXX_ONLY_FLAGS ${WIRESHARK_CXX_ONLY_FLAGS}
-		)
-	else()
-		set(WIRESHARK_COMMON_FLAGS ${WIRESHARK_COMMON_FLAGS}
-			-fexcess-precision=fast
-		)
-
-		set(WIRESHARK_C_ONLY_FLAGS ${WIRESHARK_C_ONLY_FLAGS}
-		)
-	endif()
-
 	if(ENABLE_EXTRA_COMPILER_WARNINGS)   # This overrides -Werror
-		set(WIRESHARK_COMMON_FLAGS ${WIRESHARK_COMMON_FLAGS} ${WIRESHARK_EXTRA_COMPILER_COMMON_FLAGS})
-		set(WIRESHARK_C_ONLY_FLAGS ${WIRESHARK_C_ONLY_FLAGS} ${WIRESHARK_EXTRA_COMPILER_C_ONLY_FLAGS})
-		set(WIRESHARK_CXX_ONLY_FLAGS ${WIRESHARK_CXX_ONLY_FLAGS} ${WIRESHARK_EXTRA_COMPILER_CXX_ONLY_FLAGS})
+		set(COMMON_WARN_FLAGS ${COMMON_WARN_FLAGS} ${COMMON_EXTRA_WARN_FLAGS})
+		set(C_WARN_FLAGS ${C_WARN_FLAGS} ${C_EXTRA_WARN_FLAGS})
+		set(CXX_WARN_FLAGS ${CXX_WARN_FLAGS} ${CXX_EXTRA_WARN_FLAGS})
 	endif()
 
 	add_definitions(
@@ -486,6 +523,9 @@ endif()
 
 set( C_FLAG_TESTS ${WIRESHARK_COMMON_FLAGS} ${WIRESHARK_C_ONLY_FLAGS} )
 set( CXX_FLAG_TESTS ${WIRESHARK_COMMON_FLAGS} ${WIRESHARK_CXX_ONLY_FLAGS} )
+
+set( C_WARN_TESTS ${COMMON_WARN_FLAGS} ${C_WARN_FLAGS} )
+set( CXX_WARN_TESTS ${COMMON_WARN_FLAGS} ${CXX_WARN_FLAGS} )
 
 # Counterhack to work around some cache magic in CHECK_C_SOURCE_COMPILES
 include(CheckCCompilerFlag)
@@ -526,6 +566,30 @@ foreach(THIS_FLAG ${CXX_FLAG_TESTS})
 endforeach()
 set(CMAKE_CXX_FLAGS "${ADDED_CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS}")
 
+foreach(THIS_FLAG ${C_WARN_TESTS})
+	string( REGEX REPLACE "[^a-zA-Z0-9_]+" "_" F ${THIS_FLAG} )
+	set(${F} ${THIS_FLAG})
+	set(V C_${F}_VALID)
+	message(STATUS "Checking for c-compiler flag: ${THIS_FLAG}")
+	check_c_compiler_flag("${C_FLAG_TESTS} ${${F}}" ${V})
+	if (${${V}})
+		set(ADDED_WARN_C_FLAGS ${ADDED_WARN_C_FLAGS} ${${F}})
+	endif()
+endforeach()
+set(WS_WARNINGS_C_FLAGS ${ADDED_WARN_C_FLAGS})
+
+foreach(THIS_FLAG ${CXX_WARN_TESTS})
+	string( REGEX REPLACE "[^a-zA-Z0-9_]+" "_" F ${THIS_FLAG} )
+	set(${F} ${THIS_FLAG})
+	set(V CXX_${F}_VALID)
+	message(STATUS "Checking for c++-compiler flag: ${THIS_FLAG}")
+	check_cxx_compiler_flag("${CXX_FLAG_TESTS} ${${F}}" ${V})
+	if (${${V}})
+		set(ADDED_WARN_CXX_FLAGS ${ADDED_WARN_CXX_FLAGS} ${${F}})
+	endif()
+endforeach()
+set(WS_WARNINGS_CXX_FLAGS ${ADDED_WARN_CXX_FLAGS})
+
 if(ENABLE_ASAN)
 	set(CMAKE_REQUIRED_LIBRARIES "-fsanitize=address")
 	check_c_compiler_flag(-fsanitize=address C__fsanitize_address_VALID)
@@ -536,12 +600,19 @@ if(ENABLE_ASAN)
 	endif()
 	set(CMAKE_C_FLAGS "-fsanitize=address ${CMAKE_C_FLAGS}")
 	set(CMAKE_CXX_FLAGS "-fsanitize=address ${CMAKE_CXX_FLAGS}")
+	# Disable ASAN for build-time tools, e.g. lemon
+	check_c_compiler_flag(-fno-sanitize=all C__fno_sanitize_all_VALID)
+	if(C__fno_sanitize_all_VALID)
+		set(NO_SANITIZE_CFLAGS "-fno-sanitize=all")
+		set(NO_SANITIZE_LDFLAGS "-fno-sanitize=all")
+	endif()
 endif()
 
+set(WERROR_COMMON_FLAGS "")
+set(NO_ERROR_DEPRECATED_DECLARATIONS_COMPILE_FLAGS "")
 if(NOT DISABLE_WERROR AND NOT ENABLE_EXTRA_COMPILER_WARNINGS)
 	if(CMAKE_C_COMPILER_ID MATCHES "MSVC")
 		set(WERROR_COMMON_FLAGS "/WX")
-		set(NO_ERROR_DEPRECATED_DECLARATIONS_COMPILE_FLAGS)
 	else()
 		check_c_compiler_flag(-Werror WERROR)
 		if (WERROR)
@@ -549,8 +620,6 @@ if(NOT DISABLE_WERROR AND NOT ENABLE_EXTRA_COMPILER_WARNINGS)
 			set(NO_ERROR_DEPRECATED_DECLARATIONS_COMPILE_FLAGS "-Wno-error=deprecated-declarations")
 		endif()
 	endif()
-else()
-	set(WERROR_COMMON_FLAGS FALSE)
 endif()
 
 #
@@ -647,11 +716,11 @@ endif()
 # - set HAVE_XXX
 
 #The minimum package list
-set(PACKAGELIST Gettext M Git GLIB2 GMODULE2 GTHREAD2 LEX YACC Perl SED SH PythonInterp)
+set(PACKAGELIST Gettext M Git GLIB2 GMODULE2 GTHREAD2 LEX YACC Perl SED SH PythonInterp NGHTTP2)
 set(LEX_REQUIRED TRUE)
 set(GLIB2_REQUIRED TRUE)
 set(GLIB2_FIND_REQUIRED TRUE)
-set(GLIB2_MIN_VERSION 2.14.0)
+set(GLIB2_MIN_VERSION 2.22.0)
 set(GTHREAD2_REQUIRED TRUE)
 set(PythonInterp_FIND_VERSION 2)
 set(Python_ADDITIONAL_VERSIONS 3)
@@ -710,7 +779,7 @@ if(BUILD_wireshark)
 		set(QT_VERSION 5)
 	else()
 		set(PACKAGELIST ${PACKAGELIST} Qt4)
-		set(Qt4_OPTIONS 4.7.1 REQUIRED QtCore QtGui)
+		set(Qt4_OPTIONS 4.8 REQUIRED QtCore QtGui)
 		set(QT_VERSION 4)
 	endif()
 endif()
@@ -721,11 +790,9 @@ if(ENABLE_SMI)
 endif()
 
 # GNU crypto
-if(ENABLE_GCRYPT)
-	set(PACKAGELIST ${PACKAGELIST} GCRYPT)
-	# Minimum version needed.
-	set(GCRYPT_OPTIONS "1.4.2")
-endif()
+set(PACKAGELIST ${PACKAGELIST} GCRYPT)
+# Minimum version needed.
+set(GCRYPT_OPTIONS "1.4.2" REQUIRED)
 
 # GNU SSL/TLS support
 if(ENABLE_GNUTLS)
@@ -768,6 +835,16 @@ if(ENABLE_ZLIB)
 	set(PACKAGELIST ${PACKAGELIST} ZLIB)
 endif()
 
+# LZ4 compression
+if(ENABLE_LZ4)
+	set(PACKAGELIST ${PACKAGELIST} LZ4)
+endif()
+
+# Snappy compression
+if(ENABLE_SNAPPY)
+	set(PACKAGELIST ${PACKAGELIST} SNAPPY)
+endif()
+
 # Embedded Lua interpreter
 if(ENABLE_LUA)
 	set(PACKAGELIST ${PACKAGELIST} LUA)
@@ -784,6 +861,14 @@ endif()
 
 if(ENABLE_SBC)
 	set(PACKAGELIST ${PACKAGELIST} SBC)
+endif()
+
+if(ENABLE_SPANDSP)
+	set(PACKAGELIST ${PACKAGELIST} SPANDSP)
+endif()
+
+if(ENABLE_LIBXML2)
+	set(PACKAGELIST ${PACKAGELIST} LIBXML2)
 endif()
 
 # Capabilities
@@ -878,6 +963,9 @@ endif()
 if(LIBSSH_FOUND)
 	set(HAVE_LIBSSH 1)
 endif()
+if(NGHTTP2_FOUND)
+	set(HAVE_NGHTTP2 1)
+endif()
 if(HAVE_LIBCARES)
 	set(HAVE_C_ARES 1)
 endif()
@@ -890,6 +978,12 @@ if(HAVE_LIBNL AND HAVE_AIRPCAP)
 endif()
 if(HAVE_LIBSBC)
 	set(HAVE_SBC 1)
+endif()
+if(SPANDSP_FOUND)
+	set(HAVE_SPANDSP 1)
+endif()
+if(LIBXML2_FOUND)
+	set(HAVE_LIBXML2 1)
 endif()
 if(EXTCAP_ANDROIDDUMP_LIBPCAP)
 	set(ANDROIDDUMP_USE_LIBPCAP 1)
@@ -909,6 +1003,12 @@ if(HAVE_LIBZLIB)
 	# Always include the "true" zlib includes first. This works around a
 	# bug in the Windows setup of GTK[23] which has a faulty zconf.h.
 	include_directories(BEFORE ${ZLIB_INCLUDE_DIRS})
+endif()
+if(HAVE_LIBLZ4)
+	set(HAVE_LZ4 1)
+endif()
+if(SNAPPY_FOUND)
+	set(HAVE_SNAPPY 1)
 endif()
 if (Qt5Widgets_FOUND)
 	#
@@ -976,7 +1076,7 @@ if (Qt5Widgets_FOUND)
 		set(MOC_OPTIONS -nn)
 	endif()
 # If Qt4: QT_LIBRARIES and QT_INCLUDES are not set above. They require extra magic
-elseif(QT_FOUND)
+elseif(QT4_FOUND)
 	include(${QT_USE_FILE})
 	include_directories(${QT_INCLUDE_DIR})
 	message(STATUS "Qt includes: ${QT_INCLUDE_DIR}")
@@ -994,14 +1094,19 @@ elseif(QT_FOUND)
 			set(MOC_OPTIONS -nn)
 		endif()
 	endif()
+	if(WIN32 OR APPLE)
+		message(FATAL_ERROR "Windows and macOS builds should use Qt5.")
+	endif()
 endif()
 
 if(ENABLE_CHECKHF_CONFLICT)
 	set(ENABLE_CHECK_FILTER 1)
 endif()
 
-message(STATUS "C-Flags: ${CMAKE_C_FLAGS}")
-message(STATUS "CXX-Flags: ${CMAKE_CXX_FLAGS}")
+string(REPLACE ";" " " _warnings_c_flags "${WS_WARNINGS_C_FLAGS}")
+message(STATUS "C-Flags: ${CMAKE_C_FLAGS} ${_warnings_c_flags}")
+string(REPLACE ";" " " _warnings_cxx_flags "${WS_WARNINGS_CXX_FLAGS}")
+message(STATUS "CXX-Flags: ${CMAKE_CXX_FLAGS} ${_warnings_cxx_flags}")
 message(STATUS "Warnings as errors: ${WERROR_COMMON_FLAGS}")
 
 if(APPLE)
@@ -1021,7 +1126,17 @@ include(ConfigureChecks.cmake)
 include(TestBigEndian)
 test_big_endian(WORDS_BIGENDIAN)
 
+# Global properties
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+if(ENABLE_CCACHE AND (CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID MATCHES "Clang"))
+	# http://stackoverflow.com/a/24305849/82195
+	find_program(CCACHE_EXECUTABLE ccache)
+	if(CCACHE_EXECUTABLE)
+		set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_EXECUTABLE}")
+		set_property(GLOBAL PROPERTY RULE_LAUNCH_LINK "${CCACHE_EXECUTABLE}")
+	endif()
+endif()
 
 # The top level checkAPIs target, add before subdirectory calls so it's avaiable to all
 add_custom_target(checkAPI)
@@ -1043,23 +1158,6 @@ add_subdirectory( tools/lemon )
 add_subdirectory( ui )
 add_subdirectory( wiretap )
 add_subdirectory( writecap )
-add_subdirectory( wsutil )
-
-if(NOT WIN32)
-	add_custom_target(dumpabi DEPENDS dumpabi-libwireshark dumpabi-libwiretap dumpabi-libwsutil)
-endif()
-
-if(ENABLE_ECHLD)
-	add_subdirectory( echld )
-endif()
-
-if(BUILD_wireshark_gtk AND GTK_FOUND)
-	add_subdirectory( ui/gtk )
-endif()
-
-if(BUILD_wireshark AND QT_FOUND)
-	add_subdirectory( ui/qt )
-endif()
 
 # Location of our data files. This should be set to a value that allows
 # running from the build directory on Windows, on OS X when building an
@@ -1073,6 +1171,22 @@ else()
 endif()
 
 set(DATAFILE_DIR ${_datafile_dir} CACHE INTERNAL "Build time data file location.")
+
+# wsutil must be added after DATAFILE_DIR is set such that filesystem.c can
+# learn about the directory location.
+add_subdirectory( wsutil )
+
+if(NOT WIN32)
+	add_custom_target(dumpabi DEPENDS dumpabi-libwireshark dumpabi-libwiretap dumpabi-libwsutil)
+endif()
+
+if(BUILD_wireshark_gtk AND GTK_FOUND)
+	add_subdirectory( ui/gtk )
+endif()
+
+if(BUILD_wireshark AND QT_FOUND)
+	add_subdirectory( ui/qt )
+endif()
 
 if(ENABLE_EXTCAP)
 	# Target platform locations
@@ -1095,7 +1209,14 @@ if(LIBSSH_FOUND)
 	endif()
 endif()
 
-# Location of our plugins. PLUGIN_DIRECTORY should allow running
+# Directory where plugins and Lua dissectors can be found.
+if (WIN32)
+	set(PLUGIN_INSTALL_DIR "plugins/${CPACK_PACKAGE_VERSION}")
+else ()
+	set(PLUGIN_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${CPACK_PACKAGE_NAME}/plugins/${CPACK_PACKAGE_VERSION}")
+endif()
+
+# Location of our plugins. PLUGIN_DIR should allow running
 # from the build directory similar to DATAFILE_DIR above.
 if(ENABLE_PLUGINS)
 	# Target platform locations
@@ -1105,15 +1226,10 @@ if(ENABLE_PLUGINS)
 	set(HAVE_PLUGINS 1)
 	add_custom_target(plugins)
 	set_target_properties(plugins PROPERTIES FOLDER "Plugins")
-	if (WIN32)
-		set(PLUGIN_INSTALL_DIR "plugins/${CPACK_PACKAGE_VERSION}")
-	else ()
-		set(PLUGIN_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/${CPACK_PACKAGE_NAME}/plugins/${CPACK_PACKAGE_VERSION}")
-	endif()
 	set(PLUGIN_SRC_DIRS
 		plugins/docsis
-		plugins/epl_plus_xdd
 		plugins/ethercat
+		plugins/epl_plus_xdd
 		plugins/gryphon
 		plugins/irda
 		plugins/m2m
@@ -1121,12 +1237,22 @@ if(ENABLE_PLUGINS)
 		plugins/opcua
 		plugins/profinet
 		plugins/stats_tree
+		#plugins/transum
 		plugins/unistim
 		plugins/wimax
 		plugins/wimaxasncp
 		plugins/wimaxmacphy
 		${CUSTOM_PLUGIN_SRC_DIR}
 	)
+
+	# Build demo plugin, only if asked explicitly
+	if(ENABLE_PLUGIN_IFDEMO)
+		set(PLUGIN_SRC_DIRS
+			${PLUGIN_SRC_DIRS}
+			plugins/pluginifdemo
+		)
+	endif()
+
 # It seems this stuff doesn't build with autofoo either...
 #	if(YAPP_FOUND)
 #		set(PLUGIN_SRC_DIRS
@@ -1237,9 +1363,14 @@ endforeach()
 
 include(FeatureSummary)
 #SET_FEATURE_INFO(NAME DESCRIPTION [URL [COMMENT] ])
-SET_FEATURE_INFO(SBC "SBC Codec for Bluetooth A2DP stream playing" "www: http://git.kernel.org/cgit/bluetooth/sbc.git" )
-SET_FEATURE_INFO(LIBSSH "libssh is library for ssh connections and it is needed to build sshdump/ciscodump" "www: https://www.libssh.org/get-it/" )
-
+SET_FEATURE_INFO(SBC "SBC Codec for Bluetooth A2DP stream playing" "http://git.kernel.org/cgit/bluetooth/sbc.git" )
+SET_FEATURE_INFO(SPANDSP "Support for G.722 and G.726 codecs in RTP player" "http://www.soft-switch.org/" )
+SET_FEATURE_INFO(LIBXML2 "Libxml2 is a XML C parser, which can be used for handling XML configuration in dissectors" "http://xmlsoft.org/" )
+SET_FEATURE_INFO(LIBSSH "libssh is library for ssh connections and it is needed to build sshdump/ciscodump" "https://www.libssh.org/get-it/" )
+SET_FEATURE_INFO(LZ4 "LZ4 is lossless compression algorithm used in some protocol (CQL...)" "http://www.lz4.org" )
+SET_FEATURE_INFO(SNAPPY "snappy is a fast compressor/decompressor from Google used in some protocol (CQL, kafka...)" "http://google.github.io/snappy/")
+SET_FEATURE_INFO(NGHTTP2 "nghttp2 is used for header (de)compression (HPACK)" "http://www.nghttp2.org" )
+SET_FEATURE_INFO(YAPP "Yet Another Perl Parser compiler" "http://search.cpan.org/dist/Parse-Yapp/")
 FEATURE_SUMMARY(WHAT ALL)
 
 link_directories(
@@ -1267,7 +1398,7 @@ if(WIN32)
 	)
 endif()
 
-# sources common for wireshark, tshark, and rawshark
+# sources common for wireshark, tshark, rawshark and sharkd
 set(SHARK_COMMON_SRC
 	cfile.c
 	frame_tvbuff.c
@@ -1290,6 +1421,7 @@ set(TSHARK_TAP_SRC
 	ui/cli/tap-comparestat.c
 	ui/cli/tap-diameter-avp.c
 	ui/cli/tap-expert.c
+	#ui/cli/tap-exportobject.c
 	ui/cli/tap-endpoints.c
 	ui/cli/tap-follow.c
 	ui/cli/tap-funnel.c
@@ -1322,6 +1454,7 @@ set(INSTALL_DIRS
 	diameter
 	dtds
 	help
+	profiles
 	radius
 	tpncp
 	wimaxasncp
@@ -1340,6 +1473,7 @@ set(INSTALL_FILES
 	${CMAKE_BINARY_DIR}/doc/AUTHORS-SHORT
 	${CMAKE_BINARY_DIR}/doc/asn2deb.html
 	${CMAKE_BINARY_DIR}/doc/androiddump.html
+	${CMAKE_BINARY_DIR}/doc/udpdump.html
 	${CMAKE_BINARY_DIR}/doc/capinfos.html
 	${CMAKE_BINARY_DIR}/doc/captype.html
 	${CMAKE_BINARY_DIR}/doc/ciscodump.html
@@ -1385,6 +1519,8 @@ set(LIBEPAN_LIBS
 		${GNUTLS_LIBRARIES}
 		${SMI_LIBRARIES}
 		${ZLIB_LIBRARIES}
+		${LZ4_LIBRARIES}
+		${SNAPPY_LIBRARIES}
 		${M_LIBRARIES}
 		${WINSPARKLE_LIBRARIES}
 )
@@ -1450,15 +1586,13 @@ if(WIN32)
 				"${_dll_output_dir}"
 		)
 	endif(LIBSSH_FOUND)
-	if(GCRYPT_FOUND)
-		foreach( _dll ${GCRYPT_DLLS} )
-			add_custom_command(TARGET copy_cli_dlls PRE_BUILD
-				COMMAND ${CMAKE_COMMAND} -E copy_if_different
-					"${GCRYPT_DLL_DIR}/${_dll}"
-					"${_dll_output_dir}"
-			)
-		endforeach(_dll)
-	endif(GCRYPT_FOUND)
+	foreach( _dll ${GCRYPT_DLLS} )
+		add_custom_command(TARGET copy_cli_dlls PRE_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${GCRYPT_DLL_DIR}/${_dll}"
+				"${_dll_output_dir}"
+		)
+	endforeach(_dll)
 	if(GNUTLS_FOUND)
 		foreach( _dll ${GNUTLS_DLLS} )
 			add_custom_command(TARGET copy_cli_dlls PRE_BUILD
@@ -1484,6 +1618,41 @@ if(WIN32)
 				"${_dll_output_dir}"
 		)
 	endif(LUA_FOUND)
+	if (LZ4_FOUND)
+		add_custom_command(TARGET copy_cli_dlls PRE_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${LZ4_DLL_DIR}/${LZ4_DLL}"
+				"${_dll_output_dir}"
+		)
+	endif(LZ4_FOUND)
+	if (NGHTTP2_FOUND)
+		add_custom_command(TARGET copy_cli_dlls PRE_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${NGHTTP2_DLL_DIR}/${NGHTTP2_DLL}"
+				"${_dll_output_dir}"
+		)
+	endif(NGHTTP2_FOUND)
+	if (SBC_FOUND)
+		add_custom_command(TARGET copy_cli_dlls PRE_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${SBC_DLL_DIR}/${SBC_DLL}"
+				"${_dll_output_dir}"
+		)
+	endif(SBC_FOUND)
+	if (SPANDSP_FOUND)
+		add_custom_command(TARGET copy_cli_dlls PRE_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${SPANDSP_DLL_DIR}/${SPANDSP_DLL}"
+				"${_dll_output_dir}"
+		)
+	endif(SPANDSP_FOUND)
+	if (LIBXML2_FOUND)
+		add_custom_command(TARGET copy_cli_dlls PRE_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${LIBXML2_DLL_DIR}/${LIBXML2_DLL}"
+				"${_dll_output_dir}"
+		)
+	endif(LIBXML2_FOUND)
 	if (SMI_FOUND)
 		# Wireshark.nsi wants SMI_DIR which is the base SMI directory
 		get_filename_component(SMI_DIR ${SMI_DLL_DIR} DIRECTORY)
@@ -1527,6 +1696,13 @@ if(WIN32)
 				"${_dll_output_dir}/snmp/mibs/tubs"
 		)
 	endif(SMI_FOUND)
+	if (SNAPPY_FOUND)
+		add_custom_command(TARGET copy_cli_dlls PRE_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${SNAPPY_DLL_DIR}/${SNAPPY_DLL}"
+				"${_dll_output_dir}"
+		)
+	endif(SNAPPY_FOUND)
 	if (WINSPARKLE_FOUND)
 		add_custom_command(TARGET copy_cli_dlls PRE_BUILD
 			COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -1775,7 +1951,7 @@ if(ENABLE_APPLICATION_BUNDLE)
 		GENERATED 1
 	)
 
-	# Wireshark.app/Contents/Resources/share/man/man1
+	# Wireshark.app/Contents/Resources/share/man/man4
 	set_source_files_properties(${BUNDLE_RESOURCE_SHARE_MAN4_FILES} PROPERTIES
 		MACOSX_PACKAGE_LOCATION Resources/share/man/man4
 		GENERATED 1
@@ -1818,6 +1994,7 @@ if(BUILD_wireshark AND QT_FOUND)
 	add_executable(wireshark WIN32 MACOSX_BUNDLE wireshark-qt.cpp ${wireshark_FILES} ${EXTRA_BUNDLE_FILES})
 	add_dependencies(wireshark version)
 	set(PROGLIST ${PROGLIST} wireshark)
+	set_target_properties(wireshark PROPERTIES COMPILE_OPTIONS "${WS_WARNINGS_CXX_FLAGS}")
 	set_target_properties(wireshark PROPERTIES LINK_FLAGS "${WS_LINK_FLAGS}")
 	set_target_properties(wireshark PROPERTIES FOLDER "Executables")
 	if(ENABLE_APPLICATION_BUNDLE OR WIN32)
@@ -1897,6 +2074,7 @@ endif()
 # Common properties for CLI executables
 macro(set_extra_executable_properties _executable _folder)
 	set_target_properties(${_executable} PROPERTIES
+		COMPILE_OPTIONS "${WS_WARNINGS_C_FLAGS}"
 		LINK_FLAGS "${WS_LINK_FLAGS}"
 		FOLDER ${_folder}
 	)
@@ -1924,6 +2102,7 @@ macro(set_extcap_executable_properties _executable)
 
 	if(WIN32)
 		set_target_properties(${_executable} PROPERTIES
+			COMPILE_OPTIONS "${WS_WARNINGS_C_FLAGS}"
 			LINK_FLAGS "${WS_LINK_FLAGS}"
 			RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/run/extcap
 			RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/run/Debug/extcap
@@ -1933,6 +2112,7 @@ macro(set_extcap_executable_properties _executable)
 		)
 	else()
 		set_target_properties(${_executable} PROPERTIES
+			COMPILE_OPTIONS "${WS_WARNINGS_C_FLAGS}"
 			LINK_FLAGS "${WS_LINK_FLAGS}"
 			RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/run/extcap
 		)
@@ -1974,6 +2154,7 @@ if(BUILD_wireshark_gtk AND GTK_FOUND)
 	add_executable(wireshark-gtk WIN32 ${wireshark_FILES})
 	add_dependencies(wireshark-gtk version)
 	set(PROGLIST ${PROGLIST} wireshark-gtk)
+	set_target_properties(wireshark-gtk PROPERTIES COMPILE_OPTIONS "${WS_WARNINGS_C_FLAGS}")
 	set_target_properties(wireshark-gtk PROPERTIES LINK_FLAGS "${WS_LINK_FLAGS}")
 	set_target_properties(wireshark-gtk PROPERTIES FOLDER "Executables")
 	target_link_libraries(wireshark-gtk ${wireshark_gtk_LIBS})
@@ -2090,25 +2271,25 @@ if(BUILD_tshark)
 	install(TARGETS tshark RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
-if(BUILD_tfshark)
-	set(tfshark_LIBS
-		ui
-		${LIBEPAN_LIBS}
-		${APPLE_CORE_FOUNDATION_LIBRARY}
-		${APPLE_SYSTEM_CONFIGURATION_LIBRARY}
-	)
-	set(tfshark_FILES
-		tfshark.c
-		${TSHARK_TAP_SRC}
-		${SHARK_COMMON_SRC}
-		${CMAKE_BINARY_DIR}/image/tfshark.rc
-	)
-	add_executable(tfshark ${tfshark_FILES})
-	add_dependencies(tfshark version)
-	set_extra_executable_properties(tfshark "Executables")
-	target_link_libraries(tfshark ${tfshark_LIBS})
-	install(TARGETS tfshark RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-endif()
+#if(BUILD_tfshark)
+	#set(tfshark_LIBS
+		#ui
+		#${LIBEPAN_LIBS}
+		#${APPLE_CORE_FOUNDATION_LIBRARY}
+		#${APPLE_SYSTEM_CONFIGURATION_LIBRARY}
+	#)
+	#set(tfshark_FILES
+		#tfshark.c
+		#${TSHARK_TAP_SRC}
+		#${SHARK_COMMON_SRC}
+		#${CMAKE_BINARY_DIR}/image/tfshark.rc
+	#)
+	#add_executable(tfshark ${tfshark_FILES})
+	#add_dependencies(tfshark version)
+	#set_extra_executable_properties(tfshark "Executables")
+	#target_link_libraries(tfshark ${tfshark_LIBS})
+	#install(TARGETS tfshark RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+#endif()
 
 if(BUILD_rawshark AND PCAP_FOUND)
 	set(rawshark_LIBS
@@ -2128,6 +2309,27 @@ if(BUILD_rawshark AND PCAP_FOUND)
 	set_extra_executable_properties(rawshark "Executables")
 	target_link_libraries(rawshark ${rawshark_LIBS})
 	install(TARGETS rawshark RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
+if(BUILD_sharkd)
+	set(sharkd_LIBS
+		ui
+		${LIBEPAN_LIBS}
+		${APPLE_CORE_FOUNDATION_LIBRARY}
+		${APPLE_SYSTEM_CONFIGURATION_LIBRARY}
+	)
+	set(sharkd_FILES
+		filter_files.c
+		sharkd.c
+		sharkd_daemon.c
+		sharkd_session.c
+		${SHARK_COMMON_SRC}
+	)
+	add_executable(sharkd ${sharkd_FILES})
+	add_dependencies(sharkd version)
+	set_extra_executable_properties(sharkd "Executables")
+	target_link_libraries(sharkd ${sharkd_LIBS})
+	install(TARGETS sharkd RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 if(BUILD_dftest)
@@ -2270,6 +2472,7 @@ if(BUILD_editcap)
 	set(editcap_LIBS
 		wiretap
 		${ZLIB_LIBRARIES}
+		${GCRYPT_LIBRARIES}
 		${CMAKE_DL_LIBS}
 	)
 	set(editcap_FILES
@@ -2451,6 +2654,24 @@ elseif (BUILD_ciscodump)
 	#message( WARNING "Cannot find libssh, cannot build ciscodump" )
 endif()
 
+if(ENABLE_EXTCAP AND BUILD_udpdump)
+	set(udpdump_LIBS
+		${GLIB2_LIBRARIES}
+		${CMAKE_DL_LIBS}
+		wsutil
+		writecap
+	)
+	set(udpdump_FILES
+		extcap/udpdump.c
+		extcap/extcap-base.c
+	)
+
+	add_executable(udpdump WIN32 ${udpdump_FILES})
+	set_extcap_executable_properties(udpdump)
+	target_link_libraries(udpdump ${udpdump_LIBS})
+	install(TARGETS udpdump RUNTIME DESTINATION ${EXTCAP_DIR})
+endif()
+
 if(ENABLE_EXTCAP AND BUILD_randpktdump)
 	set(randpktdump_LIBS
 		randpkt_core
@@ -2533,6 +2754,7 @@ set(CLEAN_FILES
 	${dftest_FILES}
 	${randpkt_FILES}
 	${randpktdump_FILES}
+	${udpdump_FILES}
 	${text2pcap_CLEAN_FILES}
 	${mergecap_FILES}
 	${capinfos_FILES}
@@ -2542,15 +2764,14 @@ set(CLEAN_FILES
 	${androiddump_FILES}
 	${sshdump_FILES}
 	${ciscodump_FILES}
+	${udpdump_FILES}
 )
 
-if (WERROR_COMMON_FLAGS)
-	set_source_files_properties(
-		${CLEAN_FILES}
-		PROPERTIES
-		COMPILE_FLAGS ${WERROR_COMMON_FLAGS}
-	)
-endif()
+set_source_files_properties(
+	${CLEAN_FILES}
+	PROPERTIES
+	COMPILE_FLAGS "${WERROR_COMMON_FLAGS}"
+)
 
 install(
 	FILES
@@ -2558,6 +2779,36 @@ install(
 	DESTINATION
 		${CMAKE_INSTALL_DATADIR}/${CPACK_PACKAGE_NAME}
 )
+
+# Install icons and other desktop files for Freedesktop.org-compliant desktops.
+if(((BUILD_wireshark AND QT_FOUND) OR BUILD_wireshark_gtk) AND NOT (WIN32 OR APPLE))
+	install(FILES wireshark-mime-package.xml
+		DESTINATION "${CMAKE_INSTALL_DATADIR}/mime/packages"
+		RENAME wireshark.xml
+	)
+	install(FILES wireshark.appdata.xml
+		DESTINATION "${CMAKE_INSTALL_DATADIR}/appdata"
+	)
+	if(BUILD_wireshark AND QT_FOUND)
+		install(FILES wireshark.desktop
+			DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
+	endif()
+	if(BUILD_wireshark_gtk)
+		install(FILES wireshark-gtk.desktop
+			DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
+	endif()
+	foreach(size 16 24 32 48 64 128 256)
+		install(FILES image/wsicon${size}.png
+			DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/apps"
+			RENAME wireshark.png)
+		install(FILES image/WiresharkDoc-${size}.png
+			DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${size}x${size}/mimetypes"
+			RENAME application-wireshark-doc.png)
+	endforeach()
+	install(FILES image/wsicon.svg
+		DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps"
+		RENAME wireshark.svg)
+endif()
 
 install(
 	FILES
@@ -2692,6 +2943,25 @@ CHECKAPI(
 	  ${WIRESHARK_SRC}
 	  ${TSHARK_TAP_SRC}
 )
+
+find_program(SHELLCHECK_EXECUTABLE shellcheck
+	DOC "Path to the shellcheck utility."
+)
+if (NOT "${SHELLCHECK_EXECUTABLE}" STREQUAL "SHELLCHECK_EXECUTABLE-NOTFOUND")
+	add_custom_target(shellcheck)
+	set_target_properties(shellcheck PROPERTIES FOLDER "Tests")
+	# --external-sources requires 0.4.0 or later.
+	add_custom_command(TARGET shellcheck POST_BUILD
+		COMMAND shellcheck --external-sources
+			tools/fuzz-test.sh
+			tools/randpkt-test.sh
+			tools/runa2x.sh
+			tools/test-captures.sh
+			tools/valgrind-wireshark.sh
+		WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+	)
+endif()
+
 
 #
 # Editor modelines  -  http://www.wireshark.org/tools/modelines.html
