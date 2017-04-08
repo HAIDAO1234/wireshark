@@ -2306,6 +2306,13 @@ if(BUILD_rawshark AND PCAP_FOUND)
 	)
 	add_executable(rawshark ${rawshark_FILES})
 	add_dependencies(rawshark version)
+
+
+	set_target_properties( dumpcap PROPERTIES
+		INSTALL_RPATH ${CMAKE_INSTALL_PREFIX}/lib
+		INSTALL_RPATH_USE_LINK_PATH TRUE
+	)
+
 	set_extra_executable_properties(rawshark "Executables")
 	target_link_libraries(rawshark ${rawshark_LIBS})
 	install(TARGETS rawshark RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
