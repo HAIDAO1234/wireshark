@@ -544,6 +544,7 @@ set(DISSECTOR_SRC
 	packet-enrp.c
 	packet-enttec.c
 	packet-epl.c
+	packet-epl-eds.c
 	packet-epl_v1.c
 	packet-epmd.c
 	packet-epon.c
@@ -1391,6 +1392,14 @@ set(DISSECTOR_SRC
 	packet-zrtp.c
 	packet-zvt.c
 )
+
+if(HAVE_LIBXML2)
+	set(DISSECTOR_SRC
+		${DISSECTOR_SRC}
+		packet-epl-xdd.c
+	)
+endif(HAVE_LIBXML2)
+	
 
 set(DISSECTOR_SUPPORT_SRC
 	packet-dcerpc-nt.c

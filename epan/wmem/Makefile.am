@@ -43,6 +43,7 @@ libwmem_la_SOURCES = \
 	wmem_strbuf.c			\
 	wmem_strutl.c			\
 	wmem_tree.c			\
+	wmem_interval_array.c		\
 	wmem_interval_tree.c		\
 	wmem_user_cb.c			\
 	wmem.h				\
@@ -64,6 +65,7 @@ libwmem_la_SOURCES = \
 	wmem_strutl.h			\
 	wmem_tree.h			\
 	wmem_tree-int.h			\
+	wmem_interval_array.h		\
 	wmem_interval_tree.h		\
 	wmem_user_cb.h			\
 	wmem_user_cb_int.h

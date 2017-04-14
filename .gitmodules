@@ -1,4 +1,0 @@
-[submodule "plugins/epl_plus_xdd"]
-	path = plugins/epl_plus_xdd
-	url = https://github.com/epl-viz/dissector
-	branch = master

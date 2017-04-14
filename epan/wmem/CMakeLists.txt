@@ -31,6 +31,7 @@ set(WMEM_FILES
 	wmem_allocator_block_fast.c
 	wmem_allocator_simple.c
 	wmem_allocator_strict.c
+	wmem_interval_array.c
 	wmem_interval_tree.c
 	wmem_list.c
 	wmem_map.c

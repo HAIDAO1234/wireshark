@@ -2825,7 +2825,6 @@ AC_CONFIG_FILES(
   plugins/Makefile
   plugins/docsis/Makefile
   plugins/easy_codec/Makefile
-  plugins/epl_plus_xdd/Makefile
   plugins/ethercat/Makefile
   plugins/gryphon/Makefile
   plugins/irda/Makefile

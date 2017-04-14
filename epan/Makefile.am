@@ -40,7 +40,7 @@ DIST_SUBDIRS = $(SUBDIRS) $(wslua_dist_dir)
 AM_CPPFLAGS = $(INCLUDEDIRS) -I$(builddir)/wslua $(WS_CPPFLAGS) \
 	$(GLIB_CFLAGS) $(LUA_CFLAGS) $(LIBGNUTLS_CFLAGS) \
 	$(LIBGCRYPT_CFLAGS) $(LIBSMI_CFLAGS) $(LIBGEOIP_CFLAGS) \
-	$(KRB5_CFLAGS)
+	$(KRB5_CFLAGS) $(LIBXML2_CFLAGS)
 
 noinst_LTLIBRARIES = libwireshark_generated.la libwireshark_asmopt.la
 lib_LTLIBRARIES = libwireshark.la
@@ -332,7 +332,8 @@ libwireshark_la_LIBADD = \
 	@SSL_LIBS@		\
 	@LIBSMI_LDFLAGS@	\
 	@GEOIP_LIBS@		\
-	@GLIB_LIBS@
+	@GLIB_LIBS@			\
+	@LIBXML2_LIBS@
 
 libwireshark_la_DEPENDENCIES = \
 	libwireshark_generated.la		\

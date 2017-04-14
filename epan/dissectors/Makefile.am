@@ -574,6 +574,7 @@ DISSECTOR_SRC = \
 	packet-enrp.c		\
 	packet-enttec.c		\
 	packet-epl.c		\
+	packet-epl-eds.c	\
 	packet-epl_v1.c		\
 	packet-epmd.c		\
 	packet-epon.c		\
@@ -1423,6 +1424,13 @@ DISSECTOR_SRC = \
 	packet-zvt.c		\
 	$(CUSTOM_DISSECTOR_SRC)
 
+if HAVE_LIBXML2
+DISSECTOR_SRC = \
+	packet-epl-xdd.c
+	$(DISSECTOR_SRC)
+endif
+
+
 #
 # Headers for file dissectors.
 #
@@ -1519,6 +1527,9 @@ DISSECTOR_INCLUDES = \
 	packet-dtn.h		\
 	packet-dvbci.h		\
 	packet-enip.h		\
+	packet-epl.h		\
+	packet-epl-xdd.h	\
+	packet-epl-eds.h	\
 	packet-erf.h		\
 	packet-e164.h		\
 	packet-e212.h		\
@@ -1800,6 +1811,12 @@ DISSECTOR_INCLUDES = \
 	packet-ziop.h		\
 	$(GENERATED_HEADER_FILES)	\
 	$(CUSTOM_HEADER_FILES)
+
+if HAVE_LIBXML2
+DISSECTOR_INCLUDES = \
+	packet-epl-xdd.h
+	$(DISSECTOR_INCLUDES)
+endif
 
 # Dissector helpers.  They're included in the source files in this
 # directory, but they're not dissectors themselves, i.e. they're not

@@ -917,6 +917,9 @@ foreach(PACKAGE ${PACKAGELIST})
 	if (${PACKAGE_VAR}_FOUND)
 		message(STATUS "${PACKAGE_VAR} FOUND")
 		set(HAVE_LIB${PACKAGE_VAR} 1)
+		if (NOT DEFINED ${PACKAGE_VAR}_INCLUDE_DIRS)
+				set(${PACKAGE_VAR}_INCLUDE_DIRS ${${PACKAGE_VAR}_INCLUDE_DIR})
+		endif()
 		include_directories(SYSTEM ${${PACKAGE_VAR}_INCLUDE_DIRS})
 		set(WS_ALL_LIBS ${WS_ALL_LIBS} ${${PACKAGE_VAR}_LIBRARIES})
 		message(STATUS "${PACKAGE} includes: ${${PACKAGE_VAR}_INCLUDE_DIRS}")
@@ -1229,7 +1232,6 @@ if(ENABLE_PLUGINS)
 	set(PLUGIN_SRC_DIRS
 		plugins/docsis
 		plugins/ethercat
-		plugins/epl_plus_xdd
 		plugins/gryphon
 		plugins/irda
 		plugins/m2m
