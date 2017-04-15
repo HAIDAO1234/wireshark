@@ -2038,6 +2038,8 @@ dissect_epl_pdo(struct epl_convo *convo, proto_tree *epl_tree, tvbuff_t *tvb, pa
 	return offset + len;
 }
 
+static address epl_placeholder_mac;
+
 enum convo_opts { CONVO_FOR_RESPONSE = 1, CONVO_FOR_REQUEST = 2, CONVO_ALWAYS_CREATE = 4 };
 
 static struct epl_convo *
@@ -2061,18 +2063,34 @@ epl_get_convo(packet_info *pinfo, enum convo_opts opts)
 		node_addr = &pinfo->src;
 		node_dl_addr = &pinfo->dl_src;
 	}
+	/* It'd be better to consult the Ethernet or IP address when matching conversations,
+	 * but an ASnd request is targeted at a Multicast MAC address, so we'll use
+	 * a constant address for lookup
+	 * TODO: If you, the reader, figure out a way to lookup a conversation by port only
+	 * remove the following assignment
+	 */
+	node_addr = &epl_placeholder_mac;
 
-	if (!(opts & CONVO_ALWAYS_CREATE)
-	&& (epan_convo = find_conversation(pinfo->num, node_addr, node_addr, pinfo->ptype,
-					node_port, node_port, NO_ADDR_B|NO_PORT_B)))
+	if ((epan_convo = find_conversation(pinfo->num, node_addr, node_addr,
+				pinfo->ptype, node_port, node_port, NO_ADDR_B|NO_PORT_B)))
 	{
+
+		/* XXX Do I need to check setup_frame != pinfo->num in order to not
+		 * create unnecessary new conversations?
+		 * if not, move the CONVO_ALWAYS_CREATE check up into the if and drop
+		 * the goto
+		 */
+		if ((opts & CONVO_ALWAYS_CREATE) && epan_convo->setup_frame != pinfo->num)
+			goto new_convo_creation;
+
 		if (pinfo->num > epan_convo->last_frame)
 			epan_convo->last_frame = pinfo->num;
 	}
 	else
 	{
-		epan_convo = conversation_new(pinfo->num, node_addr, node_addr, pinfo->ptype,
-				node_port, node_port, NO_ADDR2|NO_PORT2);
+new_convo_creation:
+		epan_convo = conversation_new(pinfo->num, node_addr, node_addr,
+				pinfo->ptype, node_port, node_port, NO_ADDR2|NO_PORT2);
 	}
 
 	convo = (struct epl_convo*)conversation_get_proto_data(epan_convo, proto_epl);
@@ -2891,7 +2909,7 @@ dissect_epl_asnd(proto_tree *epl_tree, tvbuff_t *tvb, packet_info *pinfo, gint o
 	{
 		struct epl_convo *convo;
 		case EPL_ASND_IDENTRESPONSE:
-			convo = epl_get_convo(pinfo, CONVO_FOR_RESPONSE | CONVO_ALWAYS_CREATE);
+			convo = epl_get_convo(pinfo, CONVO_FOR_RESPONSE);
 			offset = dissect_epl_asnd_ires(convo, epl_tree, tvb, pinfo, offset);
 			break;
 
@@ -2964,7 +2982,7 @@ dissect_epl_ainv(proto_tree *epl_tree, tvbuff_t *tvb, packet_info *pinfo, gint o
 	{
 		struct epl_convo *convo;
 		case EPL_ASND_IDENTRESPONSE:
-			convo = epl_get_convo(pinfo, CONVO_FOR_RESPONSE | CONVO_ALWAYS_CREATE);
+			convo = epl_get_convo(pinfo, CONVO_FOR_RESPONSE);
 			offset = dissect_epl_asnd_ires(convo, epl_tree, tvb, pinfo, offset);
 			break;
 
@@ -3128,6 +3146,8 @@ dissect_epl_asnd_ires(struct epl_convo *convo, proto_tree *epl_tree, tvbuff_t *t
 	guint32 epl_asnd_identresponse_ipa, epl_asnd_identresponse_snm, epl_asnd_identresponse_gtw;
 	proto_item  *ti_feat, *ti;
 	proto_tree  *epl_feat_tree;
+	guint16 DeviceType;
+	guint32 ResponseTime;
 
 	proto_tree_add_item(epl_tree, hf_epl_asnd_identresponse_en, tvb, offset, 1, ENC_LITTLE_ENDIAN);
 	proto_tree_add_item(epl_tree, hf_epl_asnd_identresponse_ec, tvb, offset, 1, ENC_LITTLE_ENDIAN);
@@ -3185,11 +3205,17 @@ dissect_epl_asnd_ires(struct epl_convo *convo, proto_tree *epl_tree, tvbuff_t *t
 	proto_tree_add_item(epl_tree, hf_epl_asnd_identresponse_pos, tvb, offset, 2, ENC_LITTLE_ENDIAN);
 	offset += 2;
 
-	convo->ResponseTime = tvb_get_letohl(tvb, offset);
+	ResponseTime = tvb_get_letohl(tvb, offset);
 	proto_tree_add_item(epl_tree, hf_epl_asnd_identresponse_rst, tvb, offset, 4, ENC_LITTLE_ENDIAN);
 	offset += 6;
 
-	convo->DeviceType = tvb_get_letohs(tvb, offset);
+	DeviceType = tvb_get_letohs(tvb, offset);
+
+	if (DeviceType != convo->DeviceType)
+		convo = epl_get_convo(pinfo, CONVO_FOR_RESPONSE | CONVO_ALWAYS_CREATE);
+
+	convo->ResponseTime = ResponseTime;
+	convo->DeviceType = DeviceType;
 	additional        = tvb_get_letohs(tvb, offset+2);
 	proto_tree_add_string_format_value(epl_tree, hf_epl_asnd_identresponse_dt, tvb, offset,
 								4, "", "Profile %d (%s), Additional Information: 0x%4.4X",
@@ -5644,6 +5670,8 @@ proto_register_epl(void)
 	epl_profiles_by_device = wmem_map_new(wmem_epan_scope(), epl_g_int16_hash, epl_g_int16_equal);
 	epl_profiles_by_nodeid = wmem_map_new(wmem_epan_scope(), epl_g_int8_hash, epl_g_int8_equal);
 	epl_profiles_by_address = wmem_map_new(wmem_epan_scope(), epl_address_hash, epl_address_equal);
+
+	set_address(&epl_placeholder_mac, AT_ETHER, 6, "\xFF\xFF\xFF\xFF\xFF\xFF");
 
 #ifdef HAVE_LIBXML2
 	xdd_init();
