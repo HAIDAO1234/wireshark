@@ -2025,6 +2025,8 @@ dissect_epl_pdo(struct epl_convo *convo, proto_tree *epl_tree, tvbuff_t *tvb, pa
 				pinfo, 0, map->no_of_bits / 8, map->info ? map->info->type : NULL, msgType
 		); 
 
+		rem_len -= map->no_of_bits / 8;
+
 		off = willbe_offset_bits / 8;
 	}
 
