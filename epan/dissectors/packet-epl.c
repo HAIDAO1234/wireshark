@@ -77,7 +77,7 @@
 
 #include "packet-epl-eds.h"
 #ifdef HAVE_LIBXML2
-	#include "packet-epl.h"
+	#include "packet-epl-xdd.h"
 	#define IF_LIBXML(x) x
 #else /* !HAVE_LIBXML2 */
 	#define IF_LIBXML(x)
@@ -2043,7 +2043,6 @@ epl_get_convo(packet_info *pinfo, enum convo_opts opts)
 {
 	struct epl_convo *convo;
 	conversation_t * epan_convo;
-	guint32 last_frame = 0;
 	guint32 node_port;
 	address *node_addr;
 	address *node_dl_addr;
@@ -2065,10 +2064,11 @@ epl_get_convo(packet_info *pinfo, enum convo_opts opts)
 	&& (epan_convo = find_conversation(pinfo->num, node_addr, node_addr, pinfo->ptype,
 					node_port, node_port, NO_ADDR_B|NO_PORT_B)))
 	{
-		last_frame = epan_convo->last_frame;
 		if (pinfo->num > epan_convo->last_frame)
 			epan_convo->last_frame = pinfo->num;
-	} else {
+	}
+	else
+	{
 		epan_convo = conversation_new(pinfo->num, node_addr, node_addr, pinfo->ptype,
 				node_port, node_port, NO_ADDR2|NO_PORT2);
 	}
@@ -2092,7 +2092,6 @@ epl_get_convo(packet_info *pinfo, enum convo_opts opts)
 		convo->seq_send = 0x00;
 		conversation_add_proto_data(epan_convo, proto_epl, (void *)convo);
 	}
-	convo->last_frame = last_frame;
 
 	return convo;
 }
@@ -2890,7 +2889,7 @@ dissect_epl_asnd(proto_tree *epl_tree, tvbuff_t *tvb, packet_info *pinfo, gint o
 	{
 		struct epl_convo *convo;
 		case EPL_ASND_IDENTRESPONSE:
-			convo = epl_get_convo(pinfo, CONVO_FOR_REQUEST | CONVO_ALWAYS_CREATE);
+			convo = epl_get_convo(pinfo, CONVO_FOR_RESPONSE | CONVO_ALWAYS_CREATE);
 			offset = dissect_epl_asnd_ires(convo, epl_tree, tvb, pinfo, offset);
 			break;
 
