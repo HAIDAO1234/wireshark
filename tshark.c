@@ -148,6 +148,7 @@
 #define INVALID_CAPABILITY 2
 #define INVALID_TAP 2
 #define INVALID_DATA_LINK 2
+#define INVALID_TIMESTAMP_TYPE 2
 #define INVALID_CAPTURE 2
 #define INIT_FAILED 2
 
@@ -342,8 +343,10 @@ print_usage(FILE *output)
   fprintf(output, "  -B <buffer size>         size of kernel buffer (def: %dMB)\n", DEFAULT_CAPTURE_BUFFER_SIZE);
 #endif
   fprintf(output, "  -y <link type>           link layer type (def: first appropriate)\n");
+  fprintf(output, "  --time-stamp-type <type> timestamp method for interface\n");
   fprintf(output, "  -D                       print list of interfaces and exit\n");
   fprintf(output, "  -L                       print list of link-layer types of iface and exit\n");
+  fprintf(output, "  --list-time-stamp-types  print list of timestamp types for iface and exit\n");
   fprintf(output, "\n");
   fprintf(output, "Capture stop conditions:\n");
   fprintf(output, "  -c <packet count>        stop after n packets (def: infinite)\n");
@@ -665,7 +668,7 @@ main(int argc, char *argv[])
   volatile gboolean    success;
   volatile int         exit_status = EXIT_SUCCESS;
 #ifdef HAVE_LIBPCAP
-  gboolean             list_link_layer_types = FALSE;
+  int                  caps_queries = 0;
   gboolean             start_capture = FALSE;
   GList               *if_list;
   gchar               *err_str;
@@ -1061,6 +1064,7 @@ main(int argc, char *argv[])
     case 'f':        /* capture filter */
     case 'g':        /* enable group read access on file(s) */
     case 'i':        /* Use interface x */
+    case LONGOPT_SET_TSTAMP_TYPE: /* Set capture timestamp type */
     case 'p':        /* Don't capture in promiscuous mode */
 #ifdef HAVE_PCAP_REMOTE
     case 'A':        /* Authentication */
@@ -1205,7 +1209,15 @@ main(int argc, char *argv[])
       break;
     case 'L':        /* Print list of link-layer types and exit */
 #ifdef HAVE_LIBPCAP
-      list_link_layer_types = TRUE;
+      caps_queries |= CAPS_QUERY_LINK_TYPES;
+#else
+      capture_option_specified = TRUE;
+      arg_error = TRUE;
+#endif
+      break;
+    case LONGOPT_LIST_TSTAMP_TYPES: /* List possible timestamp types */
+#ifdef HAVE_LIBPCAP
+      caps_queries |= CAPS_QUERY_TIMESTAMP_TYPES;
 #else
       capture_option_specified = TRUE;
       arg_error = TRUE;
@@ -1560,12 +1572,13 @@ main(int argc, char *argv[])
   }
 
 #ifdef HAVE_LIBPCAP
-  if (list_link_layer_types) {
-    /* We're supposed to list the link-layer types for an interface;
+  if (caps_queries) {
+    /* We're supposed to list the link-layer/timestamp types for an interface;
        did the user also specify a capture file to be read? */
     if (cf_name) {
       /* Yes - that's bogus. */
-      cmdarg_err("You can't specify -L and a capture file to be read.");
+      cmdarg_err("You can't specify %s and a capture file to be read.",
+                 caps_queries & CAPS_QUERY_LINK_TYPES ? "-L" : "--list-time-stamp-types");
       exit_status = INVALID_OPTION;
       goto clean_exit;
     }
@@ -2031,7 +2044,7 @@ main(int argc, char *argv[])
     }
 
     /* if requested, list the link layer types and exit */
-    if (list_link_layer_types) {
+    if (caps_queries) {
         guint i;
 
         /* Get the list of link-layer types for the capture devices. */
@@ -2039,6 +2052,7 @@ main(int argc, char *argv[])
           interface_options  interface_opts;
           if_capabilities_t *caps;
           char *auth_str = NULL;
+          int if_caps_queries = caps_queries;
 
           interface_opts = g_array_index(global_capture_opts.ifaces, interface_options, i);
 #ifdef HAVE_PCAP_REMOTE
@@ -2054,12 +2068,19 @@ main(int argc, char *argv[])
             exit_status = INVALID_CAPABILITY;
             goto clean_exit;
           }
-          if (caps->data_link_types == NULL) {
+          if ((if_caps_queries & CAPS_QUERY_LINK_TYPES) && caps->data_link_types == NULL) {
             cmdarg_err("The capture device \"%s\" has no data link types.", interface_opts.name);
             exit_status = INVALID_DATA_LINK;
             goto clean_exit;
           }
-          capture_opts_print_if_capabilities(caps, interface_opts.name, interface_opts.monitor_mode);
+          if ((if_caps_queries & CAPS_QUERY_TIMESTAMP_TYPES) && caps->timestamp_types == NULL) {
+            cmdarg_err("The capture device \"%s\" has no timestamp types.", interface_opts.name);
+            exit_status = INVALID_TIMESTAMP_TYPE;
+            goto clean_exit;
+          }
+          if (interface_opts.monitor_mode)
+                if_caps_queries |= CAPS_MONITOR_MODE;
+          capture_opts_print_if_capabilities(caps, interface_opts.name, if_caps_queries);
           free_if_capabilities(caps);
         }
         exit_status = EXIT_SUCCESS;

@@ -34,7 +34,9 @@ Wireshark should behave better on high resolution displays on Windows. (ws-bugli
 
 === New and Updated Features
 
-There are no new features in this release.
+The following features are new (or have been significantly updated)
+since version 2.4.0:
+* Support for hardware-timestamping of packets
 
 //=== Removed Dissectors
 
